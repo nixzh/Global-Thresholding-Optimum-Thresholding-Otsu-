@@ -1,0 +1,164 @@
+#include <opencv2/opencv.hpp>
+#include <iostream>
+#include <string>
+#include <math.h>
+
+using namespace cv;
+using namespace std;
+
+void Gtsu(Mat img)//基本全局阈值处理
+{
+	//平均灰度作为初始阈值
+	Scalar m = mean(img);
+	int N = m[0];
+	//计算阈值
+	int p = 0, q = 0;
+	int r = 0, t = 0;
+	int T = 0, Tp = 256;
+	do
+	{
+		Tp = T;
+		for (int i = 0; i < img.rows; i++)
+		{
+			for (int j = 0; j < img.cols; j++)
+			{
+				if (img.at<uchar>(i, j) < N)
+				{
+					p = p + img.at<uchar>(i, j);
+					r++;
+				}
+				else
+				{
+					q = q + img.at<uchar>(i, j);
+					t++;
+				}
+			}
+		}
+		T = (p / r + q / t) / 2;
+		r = 0;
+		t = 0;
+		p = 0;
+		q = 0;
+	} while (abs(T - Tp) > 1);
+	//阈值处理
+	for (int i = 0; i < img.rows; i++)
+	{
+		for (int j = 0; j < img.cols; j++)
+		{
+			if (img.at<uchar>(i, j) < T)
+			{
+				img.at<uchar>(i, j) = 0;
+			}
+			else
+			{
+				img.at<uchar>(i, j) = 255;
+			}
+		}
+	}
+	imwrite("F://基本全局阈值.tif", img);
+	imshow("基本全局阈值", img);
+	cout << "基本全局阈值：" << endl;
+	cout << "阈值=" << T << endl;
+}
+
+void Otsu(Mat img)//Otsu最佳全局阈值处理
+{
+	//计算直方图
+	int bins = 256;
+	int hist_size[] = { bins };
+	float range[] = { 0, 256 };
+	const float* ranges[] = { range };
+	MatND hist;
+	int channels[] = { 0 };
+	calcHist(&img, 1, channels, Mat(), hist, 1, hist_size, ranges, true, false);
+	//计算累计和
+	int a = img.rows;
+	int b = img.cols;
+	Mat P1(1,256,CV_32FC1);
+	P1.at<float>(0, 0) = hist.at<float>(0, 0) / a / b;
+	for (int i = 1; i < 256; i++)
+	{
+		P1.at<float>(0,i) = P1.at<float>(0,i-1) + hist.at<float>(i, 0) / a / b;
+	}
+	//计算累计均值
+	Mat m(1, 256, CV_32FC1);
+	m.at<float>(0, 0) = 0;
+	for (int i = 1; i < 256; i++)
+	{
+		m.at<float>(0, i) = m.at<float>(0, i-1) + hist.at<float>(i, 0) / a / b * i;
+	}
+	//全局灰度均值
+	float mG =m.at<float>(0, 255);
+	//全局方差
+	float cigmaG = 0;
+	for (int i = 0; i < 256; i++)
+	{
+		cigmaG = cigmaG + pow(i-mG, 2) * hist.at<float>(i, 0) / a / b;
+	}
+	//类间方差
+	Mat cigmaB=Mat::zeros(1, 256, CV_32FC1);
+	for (int i = 0; i < 256; i++)
+	{
+		float g = P1.at<float>(0, i);
+		float f = g * mG - m.at<float>(0, i);
+		if (g != 0 && g != 1)
+		{
+			cigmaB.at<float>(0, i) = pow(f, 2) / (1-g) / g;
+		}
+	}
+	//计算阈值
+	double max, min;
+	minMaxLoc(cigmaB, &min, &max);
+	int r = 0, t = 0;
+	for (int i = 0; i < 256; i++)
+	{
+		if (cigmaB.at<float>(0, i) == max)
+		{
+			r = r + i;
+			t++;
+		}
+	}
+	
+	int T = r / t;
+	//可分性度量
+	float yita = cigmaB.at<float>(0, T) / cigmaG;
+	//阈值处理
+	for (int i = 0; i < a; i++)
+	{
+		for (int j = 0; j < b; j++)
+		{
+			if (img.at<uchar>(i, j) < T)
+			{
+				img.at<uchar>(i, j) = 0;
+			}
+			else
+			{
+				img.at<uchar>(i, j) = 255;
+			}
+		}
+	}
+	imwrite("F://最佳全局阈值.tif", img);
+	imshow("最佳全局阈值", img);
+	cout << "Otsu最佳全局阈值：" << endl;
+	cout << "阈值=" << T << endl;
+	cout << "可分性度量=" << yita << endl;
+}
+
+int main()
+{
+	Mat img1;
+	do
+	{
+	char m[100];
+	cout << "请输入图片路径：" << endl;
+	cin.getline(m, 100);
+	img1 = imread(m, 0);
+	} while (img1.empty());
+	Mat img2(img1.size(), CV_8UC1);
+	img1.copyTo(img2);
+	Gtsu(img1);
+	Otsu(img2);
+	
+	waitKey();
+	return 0;
+}
